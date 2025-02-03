@@ -119,10 +119,12 @@ async function get_newses(kv: KVNamespace, date: string = today()) {
     return ret
   }))
   let ret = news.flat()
+
   if (is_today) {
     await kv.put(t, JSON.stringify(ret))
-  } 
-  await kv.put(date, JSON.stringify(ret))
+  } else {
+    await kv.put(date, JSON.stringify(ret))
+  }
   return ret
 }
 
