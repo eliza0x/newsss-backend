@@ -132,6 +132,12 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/*', cors())
 app.get('/:date', async (c) => {
   let date = c.req.param('date')
+
+  // dateが全て数字であり、8桁であることを確認
+  if (!date.match(/^\d+$/) || date.length !== 8) {
+    return c.notFound()
+  }
+
   let ret = await get_newses(c.env.KV, date)
   return c.json(ret);
 })
