@@ -92,7 +92,7 @@ async function get_news(url: string) {
 
 async function get_newses(kv: KVNamespace, date: string = today()) {
   const t = now()
-  const is_today = date === today().slice(0, 4) // 日を比較したいので、時間以降の情報をtrim
+  const is_today = date === today()
   if (is_today) {
     // 今日のニュースは更新されていくので１時間単位でcache
     let cache = await kv.get(t)
