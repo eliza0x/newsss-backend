@@ -56,6 +56,7 @@ function news_url(category: string, date: string) {
 
 async function get_news(url: string) {
   let t = today()
+  console.log(url)
   let data = await fetch(url)
   let body = await data.text()
   let $ = load(body);
@@ -113,8 +114,13 @@ async function get_newses(kv: KVNamespace, date: string = today()) {
     let url = news_url(c, date)
     let news =  await get_news(url)
     let ret = await Promise.all(news.map(async (n) => {
-      let d = await get_news_detail(kv, n.link)
-      return {date: date, title: n.title, detail: d, category: c, link: n.link}
+      try {
+        let d = await get_news_detail(kv, n.link)
+        return {title: n.title, detail: d, category: c, link: n.link}
+      } catch (e) {
+        console.error(n.link + 'で記事の詳細の取得に失敗: ' + e)
+        return {title: n.title, detail: '取得失敗', category: c, link: n.link}
+      }
     }))
     return ret
   }))
