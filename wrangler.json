@@ -14,7 +14,7 @@
       "binding": "KV",
       "id": "6e09ecb34eea417598e76768657eef75"
     }
-  ]
+  ],
   // "r2_buckets": [
   //   {
   //     "binding": "MY_BUCKET",
@@ -31,8 +31,8 @@
   // "ai": {
   //   "binding": "AI"
   // }
-  // "observability": {
-  //   "enabled": true,
-  //   "head_sampling_rate": 1
-  // }
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
 }
