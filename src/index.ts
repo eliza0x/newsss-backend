@@ -5,6 +5,7 @@ import { load } from 'cheerio';
 type Bindings = {
   DAILY_CACHE: KVNamespace,
   YAHOO_DETAIL: KVNamespace,
+  NHK_CACHE: KVNamespace
 }
 
 type News = {
@@ -76,7 +77,6 @@ async function get_yahoo_news(bind: Bindings, date: string = today()): Promise<N
     }
   }
 
-
   let caterogry: string[] = [
     'domestic',
     'world',
@@ -120,7 +120,46 @@ async function get_yahoo_news(bind: Bindings, date: string = today()): Promise<N
   return await get_newses(bind, date)
 }
 
+import Parser from 'rss-parser';
+async function get_nhk_news(bind: Bindings): Promise<News[]> {
+  function is_today(link: string): boolean {
+    // "http://www3.nhk.or.jp/news/html/20250207/k10014716431000.html".split("/")[5] => "20250207"
+    try {
+      return link.split("/")[5] == today()
+    } catch (e) {
+      return false
+    }
+  }
+
+  let urls = [
+    "https://www.nhk.or.jp/rss/news/cat1.xml", // 社会
+    "https://www.nhk.or.jp/rss/news/cat3.xml", // 科学・医療
+    "https://www.nhk.or.jp/rss/news/cat4.xml", // 政治
+    "https://www.nhk.or.jp/rss/news/cat5.xml", // 経済
+    "https://www.nhk.or.jp/rss/news/cat6.xml"  // 国際
+  ]
+
+  return await cacheing(bind.NHK_CACHE, 'nhk', async () => {
+    let newses = await Promise.all(urls.map(async (url) => {
+      let data = await fetch(url)
+      let body = await data.text()
+      let feed = await new Parser().parseString(body)
+      return feed.items.map((item) => {
+        const ret = {title: item.title, detail: item.content, category: item.categories?.toString(), link: item.link} as News; 
+        return ret
+      }).filter((item) => is_today(item.link))
+    }))
+    return newses.flat();
+  });
+}
+
 const app = new Hono<{ Bindings: Bindings }>()
+app.use('/nhk', cors())
+app.get('/nhk', async (c) => {
+  let ret = await get_nhk_news(c.env)
+  return c.json(ret);
+})
+
 app.use('/*', cors())
 app.get('/:date', async (c) => {
   let date = c.req.param('date')

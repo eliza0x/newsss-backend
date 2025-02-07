@@ -2,7 +2,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "news_with_ai",
   "main": "src/index.ts",
-  "compatibility_date": "2025-02-01",
+  "compatibility_date": "2025-01-29",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "kv_namespaces": [
     {
       "binding": "DAILY_CACHE",
@@ -11,6 +14,10 @@
     {
       "binding": "YAHOO_DETAIL",
       "id": "433eb6f55a10466db10db566c950154b"
+    },
+    {
+      "binding": "NHK_CACHE",
+      "id": "bf5abc95324c4e1da5181c0ce5b3b0bd"
     }
   ],
   "observability": {
