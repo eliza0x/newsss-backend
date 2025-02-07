@@ -7,26 +7,11 @@ type Bindings = {
   YAHOO_DETAIL: KVNamespace,
 }
 
-async function get_news_detail(kv: KVNamespace, url: string): Promise<string> {
-  try {
-    let cache = await kv.get(url)
-    if (cache) {
-      return cache
-    }
-
-    let data = await fetch(url)
-    let body = await data.text()
-    let $ = load(body)
-    let ret = $('.highLightSearchTarget', 'article').text()
-
-    if (ret.length > 0) {
-      await kv.put(url, ret)
-    }
-    return ret
-  } catch (e) {
-    console.error('記事の詳細の取得に失敗: ' + e)
-    return '記事の詳細の取得に失敗'
-  }
+type News = {
+  title: string,
+  detail: string,
+  category: string,
+  link: string
 }
 
 function today() {
@@ -36,37 +21,6 @@ function today() {
   const m = ('00' + (dt.getMonth() + 1)).slice(-2);
   const d = ('00' + dt.getDate()).slice(-2);
   return y + m + d;
-}
-
-let caterogry: string[] = [
-  'domestic',
-  'world',
-  'business',
-  'it',
-  'science'
-]
-
-function news_url(category: string, date: string) {
-  return 'https://news.yahoo.co.jp/topics/' + category + '?date=' + date
-}
-
-async function get_news(url: string): Promise<{title: string, link: string}[]> {
-  let data = await fetch(url)
-  let body = await data.text()
-  let $ = load(body);
-  const ret: {title: string, link: string}[] = []
-  $('li', '.newsFeed_list').each((i, elem) => {
-      // elemの子要素が持っているtextを配列で取得
-      let item = $(elem).find('a')
-      let link = $(item).attr('href') as string
-
-      let title_node = $(item).children().get()[1]
-      let title = $(title_node).children().get()[0]
-      let t = $(title).text() as string
-
-      ret.push({title: t, link: link})
-  })
-  return ret;
 }
 
 async function get_cache(kv: KVNamespace, date: string): Promise<News[] | null> {
@@ -87,13 +41,6 @@ async function update_cache(kv: KVNamespace, date: string, news: News[]) {
   }
 }
 
-type News = {
-  title: string,
-  detail: string,
-  category: string,
-  link: string
-}
-
 async function cacheing(kv: KVNamespace, date: string, f: () => Promise<News[]>): Promise<News[]> {
   let cache = await get_cache(kv, date)
   if (cache) {
@@ -106,17 +53,71 @@ async function cacheing(kv: KVNamespace, date: string, f: () => Promise<News[]>)
   return news
 }
 
-async function get_newses(bind: Bindings, date: string = today()) {
-  return await cacheing(bind.DAILY_CACHE, date, async () => {
-    let news = await Promise.all(caterogry.map(async (c) => {
-      let news_by_category =  await get_news(news_url(c, date))
-      return await Promise.all(news_by_category.map(async (n) => {
-        let d = await get_news_detail(bind.YAHOO_DETAIL, n.link)
-        return {title: n.title, detail: d, category: c, link: n.link}
+async function get_yahoo_news(bind: Bindings, date: string = today()): Promise<News[]> {
+  async function get_news_detail(kv: KVNamespace, url: string): Promise<string> {
+    try {
+      let cache = await kv.get(url)
+      if (cache) {
+        return cache
+      }
+
+      let data = await fetch(url)
+      let body = await data.text()
+      let $ = load(body)
+      let ret = $('.highLightSearchTarget', 'article').text()
+
+      if (ret.length > 0) {
+        await kv.put(url, ret)
+      }
+      return ret
+    } catch (e) {
+      console.error('記事の詳細の取得に失敗: ' + e)
+      return '記事の詳細の取得に失敗'
+    }
+  }
+
+
+  let caterogry: string[] = [
+    'domestic',
+    'world',
+    'business',
+    'it',
+    'science'
+  ]
+
+  async function get_news(url: string): Promise<{title: string, link: string}[]> {
+    let data = await fetch(url)
+    let body = await data.text()
+    let $ = load(body);
+    const ret: {title: string, link: string}[] = []
+    $('li', '.newsFeed_list').each((i, elem) => {
+        // elemの子要素が持っているtextを配列で取得
+        let item = $(elem).find('a')
+        let link = $(item).attr('href') as string
+
+        let title_node = $(item).children().get()[1]
+        let title = $(title_node).children().get()[0]
+        let t = $(title).text() as string
+
+        ret.push({title: t, link: link})
+    })
+    return ret;
+  }
+
+  async function get_newses(bind: Bindings, date: string) {
+    return await cacheing(bind.DAILY_CACHE, date, async () => {
+      let news = await Promise.all(caterogry.map(async (c) => {
+        let news_by_category =  await get_news('https://news.yahoo.co.jp/topics/' + c + '?date=' + date)
+        return await Promise.all(news_by_category.map(async (n) => {
+          let d = await get_news_detail(bind.YAHOO_DETAIL, n.link)
+          return {title: n.title, detail: d, category: c, link: n.link}
+        }))
       }))
-    }))
-    return news.flat()
-  });
+      return news.flat()
+    });
+  }
+
+  return await get_newses(bind, date)
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -129,12 +130,12 @@ app.get('/:date', async (c) => {
     return c.notFound()
   }
 
-  let ret = await get_newses(c.env, date)
+  let ret = await get_yahoo_news(c.env, date)
   return c.json(ret);
 })
 app.use('/', cors())
 app.get('/', async (c) => {
-  let ret = await get_newses(c.env)
+  let ret = await get_yahoo_news(c.env)
   return c.json(ret);
 })
 
