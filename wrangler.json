@@ -3,34 +3,16 @@
   "name": "news_with_ai",
   "main": "src/index.ts",
   "compatibility_date": "2025-02-01",
-  // "compatibility_flags": [
-  //   "nodejs_compat"
-  // ],
-  // "vars": {
-  //   "MY_VAR": "my-variable"
-  // },
   "kv_namespaces": [
     {
-      "binding": "KV",
-      "id": "6e09ecb34eea417598e76768657eef75"
+      "binding": "DAILY_CACHE",
+      "id": "410d8be0bdae42e293caae59a65110ac"
+    },
+    {
+      "binding": "YAHOO_DETAIL",
+      "id": "433eb6f55a10466db10db566c950154b"
     }
   ],
-  // "r2_buckets": [
-  //   {
-  //     "binding": "MY_BUCKET",
-  //     "bucket_name": "my-bucket"
-  //   }
-  // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "MY_DB",
-  //     "database_name": "my-database",
-  //     "database_id": ""
-  //   }
-  // ],
-  // "ai": {
-  //   "binding": "AI"
-  // }
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

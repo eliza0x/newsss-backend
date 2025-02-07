@@ -3,24 +3,30 @@ import { cors } from 'hono/cors'
 import { load } from 'cheerio';
 
 type Bindings = {
-  KV: KVNamespace
+  DAILY_CACHE: KVNamespace,
+  YAHOO_DETAIL: KVNamespace,
 }
 
 async function get_news_detail(kv: KVNamespace, url: string): Promise<string> {
-  let cache = await kv.get(url)
-  if (cache) {
-    return cache
-  }
+  try {
+    let cache = await kv.get(url)
+    if (cache) {
+      return cache
+    }
 
-  let data = await fetch(url)
-  let body = await data.text()
-  let $ = load(body)
-  let ret = $('.highLightSearchTarget', 'article').text()
+    let data = await fetch(url)
+    let body = await data.text()
+    let $ = load(body)
+    let ret = $('.highLightSearchTarget', 'article').text()
 
-  if (ret.length > 0) {
-    await kv.put(url, ret)
+    if (ret.length > 0) {
+      await kv.put(url, ret)
+    }
+    return ret
+  } catch (e) {
+    console.error('記事の詳細の取得に失敗: ' + e)
+    return '記事の詳細の取得に失敗'
   }
-  return ret
 }
 
 function today() {
@@ -30,16 +36,6 @@ function today() {
   const m = ('00' + (dt.getMonth() + 1)).slice(-2);
   const d = ('00' + dt.getDate()).slice(-2);
   return y + m + d;
-}
-
-function now() {
-  // 日本時間を取得
-  const dt = new Date(Date.now() + ((new Date().getTimezoneOffset() + (9 * 60)) * 60 * 1000));
-  const y = dt.getFullYear();
-  const m = ('00' + (dt.getMonth() + 1)).slice(-2);
-  const d = ('00' + dt.getDate()).slice(-2);
-  const h = ('00' + dt.getHours()).slice(-2);
-  return y + m + d + h;
 }
 
 let caterogry: string[] = [
@@ -54,9 +50,7 @@ function news_url(category: string, date: string) {
   return 'https://news.yahoo.co.jp/topics/' + category + '?date=' + date
 }
 
-async function get_news(url: string) {
-  let t = today()
-  console.log(url)
+async function get_news(url: string): Promise<{title: string, link: string}[]> {
   let data = await fetch(url)
   let body = await data.text()
   let $ = load(body);
@@ -75,63 +69,54 @@ async function get_news(url: string) {
   return ret;
 }
 
-// function gen_chat(s: string) {
-//   return {
-//     messages: [
-//       { role: 'system', content: '日本語で回答してください。' },
-//       { role: 'user', content: s },
-//     ]
-//   }
-// }
-// 
-// async function ask_ai(ai: any, s: string) {
-//   let chat = gen_chat(s);
-//   let resp = await ai.run('@cf/meta/llama-3-8b-instruct', chat);
-//   let ret = resp['response'] as string
-//   return { Q: s, A: ret }
-// }
+async function get_cache(kv: KVNamespace, date: string): Promise<News[] | null> {
+  let cache = await kv.get(date)
+  if (cache) {
+    let ret = JSON.parse(cache)
+    return ret as News[]
+  }
+  return null
+}
 
-async function get_newses(kv: KVNamespace, date: string = today()) {
-  const t = now()
+async function update_cache(kv: KVNamespace, date: string, news: News[]) {
   const is_today = date === today()
   if (is_today) {
-    // 今日のニュースは更新されていくので１時間単位でcache
-    let cache = await kv.get(t)
-    if (cache) {
-      cache = JSON.parse(cache)
-      return cache
-    }
+    await kv.put(date, JSON.stringify(news), {expirationTtl: 60 * 30}) // 今日の記事はどんどん更新されるので30分単位でexpire
   } else {
-    // 過去のニュースは一日単位でcache
-    let cache = await kv.get(date)
-    if (cache) {
-      cache = JSON.parse(cache)
-      return cache
-    }
+    await kv.put(date, JSON.stringify(news))
   }
+}
 
-  let news = await Promise.all(caterogry.map(async (c) => {
-    let url = news_url(c, date)
-    let news =  await get_news(url)
-    let ret = await Promise.all(news.map(async (n) => {
-      try {
-        let d = await get_news_detail(kv, n.link)
+type News = {
+  title: string,
+  detail: string,
+  category: string,
+  link: string
+}
+
+async function cacheing(kv: KVNamespace, date: string, f: () => Promise<News[]>): Promise<News[]> {
+  let cache = await get_cache(kv, date)
+  if (cache) {
+    return cache
+  }
+  let news = await f()
+  if (news.length != 0) {
+    await update_cache(kv, date, news)
+  }
+  return news
+}
+
+async function get_newses(bind: Bindings, date: string = today()) {
+  return await cacheing(bind.DAILY_CACHE, date, async () => {
+    let news = await Promise.all(caterogry.map(async (c) => {
+      let news_by_category =  await get_news(news_url(c, date))
+      return await Promise.all(news_by_category.map(async (n) => {
+        let d = await get_news_detail(bind.YAHOO_DETAIL, n.link)
         return {title: n.title, detail: d, category: c, link: n.link}
-      } catch (e) {
-        console.error(n.link + 'で記事の詳細の取得に失敗: ' + e)
-        return {title: n.title, detail: '取得失敗', category: c, link: n.link}
-      }
+      }))
     }))
-    return ret
-  }))
-  let ret = news.flat()
-
-  if (is_today) {
-    await kv.put(t, JSON.stringify(ret))
-  } else {
-    await kv.put(date, JSON.stringify(ret))
-  }
-  return ret
+    return news.flat()
+  });
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -144,20 +129,13 @@ app.get('/:date', async (c) => {
     return c.notFound()
   }
 
-  let ret = await get_newses(c.env.KV, date)
+  let ret = await get_newses(c.env, date)
   return c.json(ret);
 })
 app.use('/', cors())
 app.get('/', async (c) => {
-  // const ai = c.env.AI
-  // const tasks: {Q: string, A: string}[] = [];
-  // tasks.push(await ask_ai(ai, '日本の首都はどこですか？'));
-  // tasks.push(await ask_ai(ai, '日本の首相は誰ですか？'));
-  // tasks.push(await ask_ai(ai, '奈良県にwhopperはありますか？'));
-
-  let ret = await get_newses(c.env.KV)
+  let ret = await get_newses(c.env)
   return c.json(ret);
 })
-
 
 export default app
