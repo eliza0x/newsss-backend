@@ -24,6 +24,13 @@ function today() {
   return y + m + d;
 }
 
+function today_day() {
+  // 日本時間を取得
+  const dt = new Date(Date.now() + ((new Date().getTimezoneOffset() + (9 * 60)) * 60 * 1000));
+  const d = ('00' + dt.getDate()).slice(-2);
+  return d;
+}
+
 async function get_cache(kv: KVNamespace, date: string): Promise<News[] | null> {
   let cache = await kv.get(date)
   if (cache) {
@@ -121,25 +128,8 @@ async function get_yahoo_news(bind: Bindings, date: string = today()): Promise<N
 }
 
 import Parser from 'rss-parser';
-async function get_nhk_news(bind: Bindings): Promise<News[]> {
-  function is_today(link: string): boolean {
-    // "http://www3.nhk.or.jp/news/html/20250207/k10014716431000.html".split("/")[5] => "20250207"
-    try {
-      return link.split("/")[5] == today()
-    } catch (e) {
-      return false
-    }
-  }
-
-  let urls = [
-    "https://www.nhk.or.jp/rss/news/cat1.xml", // 社会
-    "https://www.nhk.or.jp/rss/news/cat3.xml", // 科学・医療
-    "https://www.nhk.or.jp/rss/news/cat4.xml", // 政治
-    "https://www.nhk.or.jp/rss/news/cat5.xml", // 経済
-    "https://www.nhk.or.jp/rss/news/cat6.xml"  // 国際
-  ]
-
-  return await cacheing(bind.NHK_CACHE, 'nhk', async () => {
+async function rss_handler(cache: KVNamespace | null, urls: string[], custom_filter: (item: News) => boolean = (_item: News) => true): Promise<News[]> {
+  async function parse() {
     let newses = await Promise.all(urls.map(async (url) => {
       let data = await fetch(url)
       let body = await data.text()
@@ -147,29 +137,72 @@ async function get_nhk_news(bind: Bindings): Promise<News[]> {
       return feed.items.map((item) => {
         const ret = {title: item.title, detail: item.content, category: item.categories?.toString(), link: item.link} as News; 
         return ret
-      }).filter((item) => is_today(item.link))
+      }).filter((item) => custom_filter(item))
     }))
     return newses.flat();
-  });
+  }
+  if (cache == null) {
+    return await parse()
+  } else {
+    return await cacheing(cache, today(), parse);
+  }
 }
 
+async function get_nhk_news(bind: Bindings): Promise<News[]> {
+  function is_today(item: News): boolean {
+    // "http://www3.nhk.or.jp/news/html/20250207/k10014716431000.html".split("/")[5] => "20250207"
+    try {
+      return item.link.split("/")[5] == today()
+    } catch (e) {
+      console.error('NHKの記事の日付の取得に失敗: ' + item)
+      return false
+    }
+  }
+  let urls = [
+    "https://www.nhk.or.jp/rss/news/cat1.xml", // 社会
+    "https://www.nhk.or.jp/rss/news/cat3.xml", // 科学・医療
+    "https://www.nhk.or.jp/rss/news/cat4.xml", // 政治
+    "https://www.nhk.or.jp/rss/news/cat5.xml", // 経済
+    "https://www.nhk.or.jp/rss/news/cat6.xml"  // 国際
+  ]
+  return rss_handler(bind.NHK_CACHE, urls, is_today)
+}
+
+type RssHandler = (bind: Bindings) => Promise<News[]>
+const rss_handlers: {'path': string, 'name': string, 'handler': RssHandler}[] = [
+  {'path': 'nhk', 'name': 'NHK', 'handler': get_nhk_news},
+  {'path': 'monoist', 'name': 'MONOist', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/monoist.xml'])},
+  {'path': 'itmediaai', 'name': 'ITmedia AI+', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/aiplus.xml'])},
+  {'path': 'itmedianews', 'name': 'ITmedia News', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml'])},
+  {'path': 'automaton', 'name': 'AUTOMATON', 'handler': () => rss_handler(null, ['https://automaton-media.com/feed/'])},
+  {'path': 'zenn', 'name': 'Zenn', 'handler': () => rss_handler(null, ['https://zenn.dev/feed'])},
+]
+
 const app = new Hono<{ Bindings: Bindings }>()
-app.use('/nhk', cors())
-app.get('/nhk', async (c) => {
-  let ret = await get_nhk_news(c.env)
-  return c.json(ret);
+
+app.use('/resources', cors())
+app.get('/resources', async (c) => {
+  return c.json(rss_handlers.map((h) => {return {path: h.path, name: h.name}})
+  )
 })
 
 app.use('/*', cors())
-app.get('/:date', async (c) => {
-  let date = c.req.param('date')
+app.get('/:path', async (c) => {
+  let path = c.req.param('path')
 
+  // rssのハンドラを探して、あればそれを返す。
+  const news = await rss_handlers.find((h) => h.path === path)?.handler(c.env);
+  if (news) {
+    return c.json(news)
+  }
+
+  // ない場合は、yahooのニュースを取得
   // dateが全て数字であり、8桁であることを確認
-  if (!date.match(/^\d+$/) || date.length !== 8) {
+  if (!path.match(/^\d+$/) || path.length !== 8) {
     return c.notFound()
   }
 
-  let ret = await get_yahoo_news(c.env, date)
+  let ret = await get_yahoo_news(c.env, path)
   return c.json(ret);
 })
 app.use('/', cors())
