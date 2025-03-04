@@ -211,4 +211,13 @@ app.get('/', async (c) => {
   return c.json(ret);
 })
 
-export default app
+async function scheduled(event: Request, env: Bindings, ctx: ExecutionContext) {
+  // 今日の日付のキャッシュを更新
+  await get_nhk_news(env)
+  return new Response('ok')
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled: scheduled
+}
