@@ -174,8 +174,9 @@ const rss_handlers: {'path': string, 'name': string, 'handler': RssHandler}[] = 
   {'path': 'monoist', 'name': 'MONOist', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/monoist.xml'])},
   {'path': 'itmediaai', 'name': 'ITmedia AI+', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/aiplus.xml'])},
   {'path': 'itmedianews', 'name': 'ITmedia News', 'handler': () => rss_handler(null, ['https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml'])},
-  {'path': 'automaton', 'name': 'AUTOMATON', 'handler': () => rss_handler(null, ['https://automaton-media.com/feed/'])},
   {'path': 'zenn', 'name': 'Zenn', 'handler': () => rss_handler(null, ['https://zenn.dev/feed'])},
+  {'path': 'gigazine', 'name': 'GIGAZINE', 'handler': () => rss_handler(null, ['https://gigazine.net/news/rss_2.0/'])},
+  {'path': 'nature', 'name': 'Nature', 'handler': () => rss_handler(null, ['https://www.nature.com/nature.rss'])},
 ]
 
 const app = new Hono<{ Bindings: Bindings }>()
